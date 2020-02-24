@@ -1,3 +1,4 @@
+use futures::executor::block_on;
 use std::time::{Duration, Instant};
 
 use avro_rs::{
@@ -52,10 +53,10 @@ fn benchmark(schema: &Schema, record: &Value, s: &str, count: usize, runs: usize
 
     for _ in 0..runs {
         let start = Instant::now();
-        let reader = Reader::with_schema(schema, &bytes[..]).unwrap();
+        let mut reader = block_on(Reader::with_schema(schema, &bytes[..])).unwrap();
 
         let mut read_records = Vec::with_capacity(count);
-        for record in reader {
+        while let Ok(Some(record)) = block_on(reader.read_next()) {
             read_records.push(record);
         }
 

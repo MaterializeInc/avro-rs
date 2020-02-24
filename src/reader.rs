@@ -175,23 +175,10 @@ impl<R: AsyncRead + Unpin + Send> Block<R> {
 }
 
 /// Main interface for reading Avro formatted values.
-///
-/// To be used as an iterator:
-///
-/// ```no_run
-/// # use avro_rs::Reader;
-/// # use std::io::Cursor;
-/// # let input = Cursor::new(Vec::<u8>::new());
-/// for value in Reader::new(input).unwrap() {
-///     match value {
-///         Ok(v) => println!("{:?}", v),
-///         Err(e) => println!("Error: {}", e),
-///     };
-/// }
-/// ```
 pub struct Reader<'a, R> {
     block: Block<R>,
     reader_schema: Option<&'a Schema>,
+    errored: bool,
     should_resolve_schema: bool,
 }
 
@@ -205,6 +192,7 @@ impl<'a, R: AsyncRead + Unpin + Send> Reader<'a, R> {
         let reader = Reader {
             block,
             reader_schema: None,
+            errored: false,
             should_resolve_schema: false,
         };
         Ok(reader)
@@ -219,6 +207,7 @@ impl<'a, R: AsyncRead + Unpin + Send> Reader<'a, R> {
         let mut reader = Reader {
             block,
             reader_schema: Some(schema),
+            errored: false,
             should_resolve_schema: false,
         };
         // Check if the reader and writer schemas disagree.
@@ -239,13 +228,20 @@ impl<'a, R: AsyncRead + Unpin + Send> Reader<'a, R> {
     #[inline]
     /// Read the next Avro value from the file, if one exists.
     pub async fn read_next(&mut self) -> Result<Option<Value>, Error> {
+        if self.errored {
+            return Ok(None);
+        }
         let read_schema = if self.should_resolve_schema {
             self.reader_schema
         } else {
             None
         };
 
-        self.block.read_next(read_schema).await
+        let res = self.block.read_next(read_schema).await;
+        if res.is_err() {
+            self.errored = true;
+        }
+        res
     }
 }
 
@@ -274,6 +270,7 @@ mod tests {
     use super::*;
     use crate::types::{Record, ToAvro};
     use crate::Reader;
+    use futures::executor::block_on;
     use std::io::Cursor;
 
     static SCHEMA: &'static str = r#"
@@ -317,7 +314,7 @@ mod tests {
         let expected = record.avro();
 
         assert_eq!(
-            from_avro_datum(&schema, &mut encoded, None).unwrap(),
+            block_on(from_avro_datum(&schema, &mut encoded, None)).unwrap(),
             expected
         );
     }
@@ -328,36 +325,16 @@ mod tests {
         let mut encoded: &'static [u8] = &[2, 0];
 
         assert_eq!(
-            from_avro_datum(&schema, &mut encoded, None).unwrap(),
+            block_on(from_avro_datum(&schema, &mut encoded, None)).unwrap(),
             Value::Union(Box::new(Value::Long(0)))
         );
-    }
-
-    #[test]
-    fn test_reader_iterator() {
-        let schema = Schema::parse_str(SCHEMA).unwrap();
-        let reader = Reader::with_schema(&schema, ENCODED).unwrap();
-
-        let mut record1 = Record::new(&schema).unwrap();
-        record1.put("a", 27i64);
-        record1.put("b", "foo");
-
-        let mut record2 = Record::new(&schema).unwrap();
-        record2.put("a", 42i64);
-        record2.put("b", "bar");
-
-        let expected = vec![record1.avro(), record2.avro()];
-
-        for (i, value) in reader.enumerate() {
-            assert_eq!(value.unwrap(), expected[i]);
-        }
     }
 
     #[test]
     fn test_reader_invalid_header() {
         let schema = Schema::parse_str(SCHEMA).unwrap();
         let invalid = ENCODED.to_owned().into_iter().skip(1).collect::<Vec<u8>>();
-        assert!(Reader::with_schema(&schema, &invalid[..]).is_err());
+        assert!(block_on(Reader::with_schema(&schema, &invalid[..])).is_err());
     }
 
     #[test]
@@ -372,16 +349,20 @@ mod tests {
             .into_iter()
             .rev()
             .collect::<Vec<u8>>();
-        let reader = Reader::with_schema(&schema, &invalid[..]).unwrap();
-        for value in reader {
-            assert!(value.is_err());
+        let mut reader = block_on(Reader::with_schema(&schema, &invalid[..])).unwrap();
+        loop {
+            let res = block_on(reader.read_next());
+            if let Ok(None) = res {
+                break;
+            }
+            assert!(res.is_err());
         }
     }
 
     #[test]
     fn test_reader_empty_buffer() {
         let empty = Cursor::new(Vec::new());
-        assert!(Reader::new(empty).is_err());
+        assert!(block_on(Reader::new(empty)).is_err());
     }
 
     #[test]
@@ -391,9 +372,13 @@ mod tests {
             .into_iter()
             .take(165)
             .collect::<Vec<u8>>();
-        let reader = Reader::new(&invalid[..]).unwrap();
-        for value in reader {
-            assert!(value.is_err());
+        let mut reader = block_on(Reader::new(&invalid[..])).unwrap();
+        loop {
+            let res = block_on(reader.read_next());
+            if let Ok(None) = res {
+                break;
+            }
+            assert!(res.is_err());
         }
     }
 }

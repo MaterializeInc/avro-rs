@@ -4,6 +4,7 @@ use std::io::Cursor;
 use avro_rs::{
     from_avro_datum, to_avro_datum, types::Value, Schema, SchemaResolutionError, ValidationError,
 };
+use futures::executor::block_on;
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -96,7 +97,7 @@ fn test_round_trip() {
     for (raw_schema, value) in SCHEMAS_TO_VALIDATE.iter() {
         let schema = Schema::parse_str(raw_schema).unwrap();
         let encoded = to_avro_datum(&schema, value.clone()).unwrap();
-        let decoded = from_avro_datum(&schema, &mut Cursor::new(encoded), None).unwrap();
+        let decoded = block_on(from_avro_datum(&schema, &mut Cursor::new(encoded), None)).unwrap();
         assert_eq!(value, &decoded);
     }
 }
@@ -134,11 +135,11 @@ fn test_schema_promotion() {
         for (j, reader_raw_schema) in promotable_schemas.iter().enumerate().skip(i + 1) {
             let reader_schema = Schema::parse_str(reader_raw_schema).unwrap();
             let encoded = to_avro_datum(&writer_schema, original_value.clone()).unwrap();
-            let decoded = from_avro_datum(
+            let decoded = block_on(from_avro_datum(
                 &writer_schema,
                 &mut Cursor::new(encoded),
                 Some(&reader_schema),
-            )
+            ))
             .expect(&format!(
                 "failed to decode {:?} with schema: {:?}",
                 original_value, reader_raw_schema
@@ -158,11 +159,11 @@ fn test_unknown_symbol() {
             .unwrap();
     let original_value = Value::Enum(0, "FOO".to_string());
     let encoded = to_avro_datum(&writer_schema, original_value).unwrap();
-    let decoded = from_avro_datum(
+    let decoded = block_on(from_avro_datum(
         &writer_schema,
         &mut Cursor::new(encoded),
         Some(&reader_schema),
-    );
+    ));
     assert!(decoded.is_err());
 }
 
@@ -182,11 +183,11 @@ fn test_default_value() {
         .unwrap();
         let datum_to_read = Value::Record(vec![("H".to_string(), default_datum.clone())]);
         let encoded = to_avro_datum(&LONG_RECORD_SCHEMA, LONG_RECORD_DATUM.clone()).unwrap();
-        let datum_read = from_avro_datum(
+        let datum_read = block_on(from_avro_datum(
             &LONG_RECORD_SCHEMA,
             &mut Cursor::new(encoded),
             Some(&reader_schema),
-        )
+        ))
         .unwrap();
         assert_eq!(
             datum_read, datum_to_read,
@@ -209,11 +210,11 @@ fn test_no_default_value() -> Result<(), String> {
     )
     .unwrap();
     let encoded = to_avro_datum(&LONG_RECORD_SCHEMA, LONG_RECORD_DATUM.clone()).unwrap();
-    let decoded = from_avro_datum(
+    let decoded = block_on(from_avro_datum(
         &LONG_RECORD_SCHEMA,
         &mut Cursor::new(encoded),
         Some(&reader_schema),
-    );
+    ));
     match decoded {
         Ok(_) => Err(String::from("Expected SchemaResolutionError, got Ok")),
         Err(ref e) => match e.downcast_ref::<SchemaResolutionError>() {
@@ -243,11 +244,11 @@ fn test_projection() {
         ("F".to_string(), Value::Int(6)),
     ]);
     let encoded = to_avro_datum(&LONG_RECORD_SCHEMA, LONG_RECORD_DATUM.clone()).unwrap();
-    let datum_read = from_avro_datum(
+    let datum_read = block_on(from_avro_datum(
         &LONG_RECORD_SCHEMA,
         &mut Cursor::new(encoded),
         Some(&reader_schema),
-    )
+    ))
     .unwrap();
     assert_eq!(datum_to_read, datum_read);
 }
@@ -272,11 +273,11 @@ fn test_field_order() {
         ("E".to_string(), Value::Int(5)),
     ]);
     let encoded = to_avro_datum(&LONG_RECORD_SCHEMA, LONG_RECORD_DATUM.clone()).unwrap();
-    let datum_read = from_avro_datum(
+    let datum_read = block_on(from_avro_datum(
         &LONG_RECORD_SCHEMA,
         &mut Cursor::new(encoded),
         Some(&reader_schema),
-    )
+    ))
     .unwrap();
     assert_eq!(datum_to_read, datum_read);
 }
