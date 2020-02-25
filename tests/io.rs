@@ -96,7 +96,9 @@ async fn test_round_trip() {
     for (raw_schema, value) in SCHEMAS_TO_VALIDATE.iter() {
         let schema = Schema::parse_str(raw_schema).unwrap();
         let encoded = to_avro_datum(&schema, value.clone()).unwrap();
-        let decoded = from_avro_datum(&schema, &mut Cursor::new(encoded), None).await.unwrap();
+        let decoded = from_avro_datum(&schema, &mut Cursor::new(encoded), None)
+            .await
+            .unwrap();
         assert_eq!(value, &decoded);
     }
 }
@@ -138,7 +140,8 @@ async fn test_schema_promotion() {
                 &writer_schema,
                 &mut Cursor::new(encoded),
                 Some(&reader_schema),
-            ).await
+            )
+            .await
             .expect(&format!(
                 "failed to decode {:?} with schema: {:?}",
                 original_value, reader_raw_schema
@@ -162,7 +165,8 @@ async fn test_unknown_symbol() {
         &writer_schema,
         &mut Cursor::new(encoded),
         Some(&reader_schema),
-    ).await;
+    )
+    .await;
     assert!(decoded.is_err());
 }
 
@@ -186,7 +190,8 @@ async fn test_default_value() {
             &LONG_RECORD_SCHEMA,
             &mut Cursor::new(encoded),
             Some(&reader_schema),
-        ).await
+        )
+        .await
         .unwrap();
         assert_eq!(
             datum_read, datum_to_read,
@@ -213,7 +218,8 @@ async fn test_no_default_value() -> Result<(), String> {
         &LONG_RECORD_SCHEMA,
         &mut Cursor::new(encoded),
         Some(&reader_schema),
-    ).await;
+    )
+    .await;
     match decoded {
         Ok(_) => Err(String::from("Expected SchemaResolutionError, got Ok")),
         Err(ref e) => match e.downcast_ref::<SchemaResolutionError>() {
@@ -247,7 +253,8 @@ async fn test_projection() {
         &LONG_RECORD_SCHEMA,
         &mut Cursor::new(encoded),
         Some(&reader_schema),
-    ).await
+    )
+    .await
     .unwrap();
     assert_eq!(datum_to_read, datum_read);
 }
@@ -276,7 +283,8 @@ async fn test_field_order() {
         &LONG_RECORD_SCHEMA,
         &mut Cursor::new(encoded),
         Some(&reader_schema),
-    ).await
+    )
+    .await
     .unwrap();
     assert_eq!(datum_to_read, datum_read);
 }

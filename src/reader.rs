@@ -12,8 +12,8 @@ use crate::schema::Schema;
 use crate::types::Value;
 use crate::util::{self, DecodeError};
 use crate::Codec;
-use futures::Stream;
 use futures::stream::unfold;
+use futures::Stream;
 
 // Internal Block reader.
 #[derive(Debug, Clone)]
@@ -236,19 +236,22 @@ impl<'a, R: AsyncRead + Unpin + Send + 'a> Reader<'a, R> {
     }
 
     pub fn into_stream(self) -> impl Stream<Item = Result<Value, Error>> + Unpin + 'a {
-        Box::pin(unfold((self, false), |(mut r, mut errored)| async move {
-            if errored {
-                None
-            } else {
-                match r.read_next().await {
-                    Ok(Some(val)) => Some(Ok(val)),
-                    Ok(None) => None,
-                    Err(e) => {
-                        errored = true;
-                        Some(Err(e))
-                    },
+        Box::pin(unfold((self, false), |(mut r, mut errored)| {
+            async move {
+                if errored {
+                    None
+                } else {
+                    match r.read_next().await {
+                        Ok(Some(val)) => Some(Ok(val)),
+                        Ok(None) => None,
+                        Err(e) => {
+                            errored = true;
+                            Some(Err(e))
+                        }
+                    }
                 }
-            }.map(|v| (v, (r, errored)))
+                .map(|v| (v, (r, errored)))
+            }
         }))
     }
 }
@@ -279,8 +282,8 @@ mod tests {
     use crate::types::{Record, ToAvro};
     use crate::Reader;
 
-    use std::io::Cursor;
     use futures::stream::StreamExt;
+    use std::io::Cursor;
 
     static SCHEMA: &'static str = r#"
             {
@@ -342,7 +345,10 @@ mod tests {
     #[tokio::test]
     async fn test_reader_stream() {
         let schema = Schema::parse_str(SCHEMA).unwrap();
-        let mut reader = Reader::with_schema(&schema, ENCODED).await.unwrap().into_stream();
+        let mut reader = Reader::with_schema(&schema, ENCODED)
+            .await
+            .unwrap()
+            .into_stream();
 
         let mut record1 = Record::new(&schema).unwrap();
         record1.put("a", 27i64);
@@ -380,7 +386,10 @@ mod tests {
             .into_iter()
             .rev()
             .collect::<Vec<u8>>();
-        let mut reader = Reader::with_schema(&schema, &invalid[..]).await.unwrap().into_stream();
+        let mut reader = Reader::with_schema(&schema, &invalid[..])
+            .await
+            .unwrap()
+            .into_stream();
         while let Some(value) = reader.next().await {
             assert!(value.is_err());
         }

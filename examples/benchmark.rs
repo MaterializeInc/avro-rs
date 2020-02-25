@@ -55,19 +55,24 @@ fn benchmark(schema: &Schema, record: &Value, s: &str, count: usize, runs: usize
     for _ in 0..runs {
         let bytes = &bytes[..];
         let durations = &mut durations;
-        block_on(( || async move {
-            let start = Instant::now();
-            let mut reader = Reader::with_schema(schema, bytes).await.unwrap().into_stream();
+        block_on((|| {
+            async move {
+                let start = Instant::now();
+                let mut reader = Reader::with_schema(schema, bytes)
+                    .await
+                    .unwrap()
+                    .into_stream();
 
-            let mut read_records = Vec::with_capacity(count);
-            while let Some(record) = reader.next().await {
-                read_records.push(record);
+                let mut read_records = Vec::with_capacity(count);
+                while let Some(record) = reader.next().await {
+                    read_records.push(record);
+                }
+
+                let duration = Instant::now().duration_since(start);
+                durations.push(duration);
+
+                assert_eq!(count, read_records.len());
             }
-
-            let duration = Instant::now().duration_since(start);
-            durations.push(duration);
-
-            assert_eq!(count, read_records.len());
         })());
     }
 

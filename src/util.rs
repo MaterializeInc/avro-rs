@@ -225,7 +225,9 @@ mod tests {
     #[tokio::test]
     async fn test_overflow() {
         let causes_left_shift_overflow: &[u8] = &[0xe1, 0xe1, 0xe1, 0xe1, 0xe1];
-        assert!(decode_variable(&mut &causes_left_shift_overflow[..]).await.is_err());
+        assert!(decode_variable(&mut &causes_left_shift_overflow[..])
+            .await
+            .is_err());
     }
 
     #[test]

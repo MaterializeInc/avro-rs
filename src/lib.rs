@@ -69,7 +69,10 @@ mod tests {
         writer.append(record).unwrap();
         writer.flush().unwrap();
         let input = writer.into_inner();
-        let mut reader = Reader::with_schema(&reader_schema, &input[..]).await.unwrap().into_stream();
+        let mut reader = Reader::with_schema(&reader_schema, &input[..])
+            .await
+            .unwrap()
+            .into_stream();
         assert_eq!(
             reader.next().await.unwrap().unwrap(),
             Value::Record(vec![
@@ -112,7 +115,10 @@ mod tests {
         writer.append(record).unwrap();
         writer.flush().unwrap();
         let input = writer.into_inner();
-        let mut reader = Reader::with_schema(&schema, &input[..]).await.unwrap().into_stream();
+        let mut reader = Reader::with_schema(&schema, &input[..])
+            .await
+            .unwrap()
+            .into_stream();
         assert_eq!(
             reader.next().await.unwrap().unwrap(),
             Value::Record(vec![
@@ -175,7 +181,10 @@ mod tests {
         writer.append(record).unwrap();
         writer.flush().unwrap();
         let input = writer.into_inner();
-        let mut reader = Reader::with_schema(&reader_schema, &input[..]).await.unwrap().into_stream();
+        let mut reader = Reader::with_schema(&reader_schema, &input[..])
+            .await
+            .unwrap()
+            .into_stream();
         assert!(reader.next().await.unwrap().is_err());
         assert!(reader.next().await.is_none());
     }
