@@ -1,4 +1,3 @@
-use futures::executor::block_on;
 use std::time::{Duration, Instant};
 
 use avro_rs::{
@@ -6,6 +5,8 @@ use avro_rs::{
     types::{Record, ToAvro, Value},
     Reader, Writer,
 };
+use futures::executor::block_on;
+use futures::stream::StreamExt;
 
 fn nanos(duration: Duration) -> u64 {
     duration.as_secs() * 1_000_000_000 + duration.subsec_nanos() as u64
@@ -52,18 +53,22 @@ fn benchmark(schema: &Schema, record: &Value, s: &str, count: usize, runs: usize
     let mut durations = Vec::with_capacity(runs);
 
     for _ in 0..runs {
-        let start = Instant::now();
-        let mut reader = block_on(Reader::with_schema(schema, &bytes[..])).unwrap();
+        let bytes = &bytes[..];
+        let durations = &mut durations;
+        block_on(( || async move {
+            let start = Instant::now();
+            let mut reader = Reader::with_schema(schema, bytes).await.unwrap().into_stream();
 
-        let mut read_records = Vec::with_capacity(count);
-        while let Ok(Some(record)) = block_on(reader.read_next()) {
-            read_records.push(record);
-        }
+            let mut read_records = Vec::with_capacity(count);
+            while let Some(record) = reader.next().await {
+                read_records.push(record);
+            }
 
-        let duration = Instant::now().duration_since(start);
-        durations.push(duration);
+            let duration = Instant::now().duration_since(start);
+            durations.push(duration);
 
-        assert_eq!(count, read_records.len());
+            assert_eq!(count, read_records.len());
+        })());
     }
 
     let total_duration_read = durations.into_iter().fold(0u64, |a, b| a + nanos(b));

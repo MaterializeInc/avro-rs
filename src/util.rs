@@ -157,6 +157,7 @@ pub fn safe_len(len: usize) -> Result<usize, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::executor::block_on;
 
     #[test]
     fn test_zigzag() {
@@ -221,10 +222,10 @@ mod tests {
         assert_eq!(s, [255, 255, 255, 255, 15]);
     }
 
-    #[test]
-    fn test_overflow() {
+    #[tokio::test]
+    async fn test_overflow() {
         let causes_left_shift_overflow: &[u8] = &[0xe1, 0xe1, 0xe1, 0xe1, 0xe1];
-        assert!(block_on(decode_variable(&mut &causes_left_shift_overflow[..])).is_err());
+        assert!(decode_variable(&mut &causes_left_shift_overflow[..]).await.is_err());
     }
 
     #[test]
