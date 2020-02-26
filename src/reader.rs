@@ -1,4 +1,5 @@
 //! Logic handling reading from Avro format at user level.
+use std::borrow::{Borrow, Cow};
 use std::io::ErrorKind;
 use std::str::{from_utf8, FromStr};
 
@@ -178,8 +179,18 @@ impl<R: AsyncRead + Unpin + Send> Block<R> {
 
 pub struct Reader<'a, R> {
     block: Block<R>,
-    reader_schema: Option<&'a Schema>,
+    reader_schema: Option<Cow<'a, Schema>>,
     should_resolve_schema: bool,
+}
+
+impl<R: AsyncRead + Unpin + Send + 'static> Reader<'static, R> {
+    /// Creates a `Reader` given a reader `Schema` and something implementing the `tokio::io::AsyncRead` trait
+    /// to read from. Takes ownership of both objects.
+    ///
+    /// **NOTE** The avro header is going to be read automatically upon creation of the `Reader`.
+    pub async fn with_schema_owned(schema: Schema, reader: R) -> Result<Reader<'static, R>, Error> {
+        Self::with_schema_inner(Cow::Owned(schema), reader).await
+    }
 }
 
 impl<'a, R: AsyncRead + Unpin + Send + 'a> Reader<'a, R> {
@@ -197,11 +208,7 @@ impl<'a, R: AsyncRead + Unpin + Send + 'a> Reader<'a, R> {
         Ok(reader)
     }
 
-    /// Creates a `Reader` given a reader `Schema` and something implementing the `tokio::io::AsyncRead` trait
-    /// to read from.
-    ///
-    /// **NOTE** The avro header is going to be read automatically upon creation of the `Reader`.
-    pub async fn with_schema(schema: &'a Schema, reader: R) -> Result<Reader<'a, R>, Error> {
+    async fn with_schema_inner(schema: Cow<'a, Schema>, reader: R) -> Result<Reader<'a, R>, Error> {
         let block = Block::new(reader).await?;
         let mut reader = Reader {
             block,
@@ -209,8 +216,16 @@ impl<'a, R: AsyncRead + Unpin + Send + 'a> Reader<'a, R> {
             should_resolve_schema: false,
         };
         // Check if the reader and writer schemas disagree.
-        reader.should_resolve_schema = reader.writer_schema() != schema;
+        reader.should_resolve_schema = reader.writer_schema() != reader.reader_schema.as_ref().unwrap().borrow();
         Ok(reader)
+    }
+
+    /// Creates a `Reader` given a reader `Schema` and something implementing the `tokio::io::AsyncRead` trait
+    /// to read from.
+    ///
+    /// **NOTE** The avro header is going to be read automatically upon creation of the `Reader`.
+    pub async fn with_schema(schema: &'a Schema, reader: R) -> Result<Reader<'a, R>, Error> {
+        Self::with_schema_inner(Cow::Borrowed(schema), reader).await
     }
 
     /// Get a reference to the writer `Schema`.
@@ -220,19 +235,19 @@ impl<'a, R: AsyncRead + Unpin + Send + 'a> Reader<'a, R> {
 
     /// Get a reference to the optional reader `Schema`.
     pub fn reader_schema(&self) -> Option<&Schema> {
-        self.reader_schema
+        self.reader_schema.as_ref().map(|cow| cow.borrow())
     }
 
     #[inline]
     /// Read the next Avro value from the file, if one exists.
     pub async fn read_next(&mut self) -> Result<Option<Value>, Error> {
         let read_schema = if self.should_resolve_schema {
-            self.reader_schema
+            self.reader_schema.as_ref()
         } else {
             None
         };
 
-        self.block.read_next(read_schema).await
+        self.block.read_next(read_schema.map(|cow| cow.borrow())).await
     }
 
     pub fn into_stream(self) -> impl Stream<Item = Result<Value, Error>> + Unpin + 'a {
