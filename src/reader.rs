@@ -210,14 +210,11 @@ impl<'a, R: AsyncRead + Unpin + Send + 'a> Reader<'a, R> {
 
     async fn with_schema_inner(schema: Cow<'a, Schema>, reader: R) -> Result<Reader<'a, R>, Error> {
         let block = Block::new(reader).await?;
-        let mut reader = Reader {
+        Ok(Reader {
+            should_resolve_schema: &block.writer_schema != schema.borrow(),
             block,
             reader_schema: Some(schema),
-            should_resolve_schema: false,
-        };
-        // Check if the reader and writer schemas disagree.
-        reader.should_resolve_schema = reader.writer_schema() != reader.reader_schema.as_ref().unwrap().borrow();
-        Ok(reader)
+        })
     }
 
     /// Creates a `Reader` given a reader `Schema` and something implementing the `tokio::io::AsyncRead` trait
@@ -235,19 +232,19 @@ impl<'a, R: AsyncRead + Unpin + Send + 'a> Reader<'a, R> {
 
     /// Get a reference to the optional reader `Schema`.
     pub fn reader_schema(&self) -> Option<&Schema> {
-        self.reader_schema.as_ref().map(|cow| cow.borrow())
+        self.reader_schema.as_deref()
     }
 
     #[inline]
     /// Read the next Avro value from the file, if one exists.
     pub async fn read_next(&mut self) -> Result<Option<Value>, Error> {
         let read_schema = if self.should_resolve_schema {
-            self.reader_schema.as_ref()
+            self.reader_schema.as_deref()
         } else {
             None
         };
 
-        self.block.read_next(read_schema.map(|cow| cow.borrow())).await
+        self.block.read_next(read_schema).await
     }
 
     pub fn into_stream(self) -> impl Stream<Item = Result<Value, Error>> + Unpin + 'a {

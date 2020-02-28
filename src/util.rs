@@ -157,7 +157,6 @@ pub fn safe_len(len: usize) -> Result<usize, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::executor::block_on;
 
     #[test]
     fn test_zigzag() {

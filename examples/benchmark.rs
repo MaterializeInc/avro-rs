@@ -55,7 +55,7 @@ fn benchmark(schema: &Schema, record: &Value, s: &str, count: usize, runs: usize
     for _ in 0..runs {
         let bytes = &bytes[..];
         let durations = &mut durations;
-        block_on((|| {
+        block_on({
             async move {
                 let start = Instant::now();
                 let mut reader = Reader::with_schema(schema, bytes)
@@ -73,7 +73,7 @@ fn benchmark(schema: &Schema, record: &Value, s: &str, count: usize, runs: usize
 
                 assert_eq!(count, read_records.len());
             }
-        })());
+        });
     }
 
     let total_duration_read = durations.into_iter().fold(0u64, |a, b| a + nanos(b));
