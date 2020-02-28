@@ -211,6 +211,7 @@ pub fn decode<'a, R: AsyncRead + Unpin + Send>(
             Schema::Record { ref fields, .. } => {
                 // Benchmarks indicate ~10% improvement using this method.
                 let mut items = Vec::new();
+                items.reserve(fields.len());
                 for field in fields {
                     // This clone is also expensive. See if we can do away with it...
                     items.push((field.name.clone(), decode(&field.schema, reader).await?));
