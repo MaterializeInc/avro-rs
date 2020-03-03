@@ -59,36 +59,45 @@ impl<R: AsyncRead + Unpin + Send> Block<R> {
         }
 
         if let Value::Map(meta) = decode(&meta_schema, &mut self.reader).await? {
-            // TODO: surface original parse schema errors instead of coalescing them here
-            let schema = meta
+            let json = meta
                 .get("avro.schema")
+                .ok_or_else(|| DecodeError::new("unable to parse schema: 'avro.schema' missing"))
                 .and_then(|bytes| {
                     if let Value::Bytes(ref bytes) = *bytes {
-                        from_slice(bytes.as_ref()).ok()
+                        from_slice(bytes.as_ref()).map_err(|e| {
+                            DecodeError::new(format!("unable to decode schema bytes: {}", e))
+                        })
                     } else {
-                        None
+                        Err(DecodeError::new(format!(
+                            "unable to decode schema: expected Bytes, got: {:?}",
+                            bytes
+                        )))
                     }
-                })
-                .and_then(|json| Schema::parse(&json).ok());
-            if let Some(schema) = schema {
-                self.writer_schema = schema;
-            } else {
-                return Err(ParseSchemaError::new("unable to parse schema").into());
-            }
+                })?;
+            let schema = Schema::parse(&json).map_err(|e| {
+                ParseSchemaError::new(format!("unable to parse json as avro schema: {}", e))
+            })?;
 
-            if let Some(codec) = meta
+            self.writer_schema = schema;
+
+            self.codec = meta
                 .get("avro.codec")
+                .ok_or_else(|| DecodeError::new("unable to parse codec: 'avro.codec' missing"))
                 .and_then(|codec| {
                     if let Value::Bytes(ref bytes) = *codec {
-                        from_utf8(bytes.as_ref()).ok()
+                        from_utf8(bytes.as_ref())
+                            .map_err(|e| DecodeError::new(format!("unable to decode codec: {}", e)))
                     } else {
-                        None
+                        Err(DecodeError::new(format!(
+                            "unable to parse codec: expected bytes, got: {:?}",
+                            codec
+                        )))
                     }
                 })
-                .and_then(|codec| Codec::from_str(codec).ok())
-            {
-                self.codec = codec;
-            }
+                .and_then(|codec| {
+                    Codec::from_str(codec)
+                        .map_err(|_| DecodeError::new(format!("unrecognized codec '{}'", codec)))
+                })?;
         } else {
             return Err(DecodeError::new("no metadata in header").into());
         }
@@ -248,8 +257,8 @@ impl<'a, R: AsyncRead + Unpin + Send + 'a> Reader<'a, R> {
     }
 
     pub fn into_stream(self) -> impl Stream<Item = Result<Value, Error>> + Unpin + 'a {
-        Box::pin(try_unfold(self, |mut r| {
-            async { Ok(r.read_next().await?.map(|v| (v, r))) }
+        Box::pin(try_unfold(self, |mut r| async {
+            Ok(r.read_next().await?.map(|v| (v, r)))
         }))
     }
 }
